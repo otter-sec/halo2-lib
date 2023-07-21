@@ -433,14 +433,12 @@ pub fn z3_formally_verify<F: BigPrimeField>(
     .unwrap();
     for i in 0..circuit.advice.len() {
         for j in 0..inputs.to_vec().len() {
+            advice.push(Int::new_const(&ctx, format!("advice_{}", i)));
+            constraints.push(advice[i]._eq(&(&advice[i] + &p).modulo(&p)));
+
             if inputs[j].cell.unwrap().offset == i {
                 ins.push(Int::new_const(ctx, format!("input_{j}")));
-                advice.push(Int::new_const(ctx, format!("advice_{i}")));
                 constraints.push(ins[j]._eq(&advice[i]));
-            } else {
-                advice.push(Int::new_const(ctx, format!("advice_{i}")));
-
-                constraints.push(advice[i]._eq(&(&advice[i] + &p).modulo(&p)));
             }
         }
     }
