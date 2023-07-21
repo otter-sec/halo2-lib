@@ -24,7 +24,7 @@ fn z3_range_test<F: BigPrimeField>(
     // First range check a
     chip.range_check(ctx, a, range_bits);
 
-    // seting up a z3 solver and input the circuit and a to the solver.
+    // setting up a z3 solver and input the circuit and a to the solver.
     let vec = vec![&a];
     let cfg = Config::new();
     let ctx_z3 = z3::Context::new(&cfg);
