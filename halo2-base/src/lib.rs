@@ -9,6 +9,8 @@
 #![warn(clippy::default_numeric_fallback)]
 #![warn(missing_docs)]
 
+extern crate num_bigint;
+
 // Different memory allocator options:
 #[cfg(feature = "jemallocator")]
 use jemallocator::Jemalloc;
