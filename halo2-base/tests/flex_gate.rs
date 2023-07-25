@@ -1,6 +1,7 @@
 #![allow(clippy::type_complexity)]
 use halo2_base::halo2_proofs::dev::MockProver;
 use halo2_base::halo2_proofs::dev::VerifyFailure;
+use halo2_base::halo2_proofs::halo2curves::bn256::Fr;
 use halo2_base::utils::ScalarField;
 use halo2_base::QuantumCell::Witness;
 use halo2_base::{
@@ -11,7 +12,6 @@ use halo2_base::{
     QuantumCell,
 };
 use test_case::test_case;
-use halo2_base::halo2_proofs::halo2curves::bn256::Fr;
 
 #[test_case(&[1, 1].map(Fr::from).map(Witness) => Fr::from(2) ; "add(): 1 + 1 == 2")]
 pub fn test_add<F: ScalarField>(inputs: &[QuantumCell<F>]) -> F {

@@ -1,11 +1,11 @@
+use halo2_base::halo2_proofs::halo2curves::bn256::Fr;
 use halo2_base::utils::{bit_length, fe_to_biguint};
 use halo2_base::{QuantumCell, QuantumCell::Witness};
-use halo2_base::halo2_proofs::halo2curves::bn256::Fr;
 use proptest::{collection::vec, prelude::*};
 
+mod common;
 mod flex_gate;
 mod range_gate;
-mod common;
 
 use common::utils::*;
 

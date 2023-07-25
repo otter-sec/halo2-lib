@@ -1,5 +1,5 @@
-use halo2_base::{QuantumCell, QuantumCell::Witness};
 use halo2_base::halo2_proofs::halo2curves::bn256::Fr;
+use halo2_base::{QuantumCell, QuantumCell::Witness};
 use proptest::prelude::*;
 
 prop_compose! {

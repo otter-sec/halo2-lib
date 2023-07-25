@@ -1,3 +1,4 @@
+use ff::Field;
 use halo2_base::{
     gates::{
         builder::{GateCircuitBuilder, GateThreadBuilder},
@@ -12,7 +13,6 @@ use halo2_base::{
     utils::testing::{check_proof, gen_proof},
     QuantumCell::Witness,
 };
-use ff::Field;
 use itertools::Itertools;
 use rand::{rngs::OsRng, thread_rng, Rng};
 
