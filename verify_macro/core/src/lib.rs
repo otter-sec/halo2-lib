@@ -1,13 +1,13 @@
+#![allow(dead_code)]
 use std::collections::HashSet;
 
 use anyhow::Result;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::{quote, ToTokens};
-use syn::{BinOp, Expr, ExprBinary, ItemFn};
+use syn::{BinOp, Expr, ExprBinary, ItemFn, Lit, LitInt};
 
-#[allow(dead_code)]
 // Splits the constraints into a vector of unary, binary or parenthe expressions
-fn split_conditions(expr: Expr) -> Vec<syn::Expr> {
+fn split_conditions(expr: Expr) -> Vec<Expr> {
     let expr = match expr {
         Expr::Binary(b) => b,
         Expr::Unary(_) => return vec![expr],
@@ -28,7 +28,6 @@ fn split_conditions(expr: Expr) -> Vec<syn::Expr> {
     }
 }
 
-#[allow(dead_code)]
 fn get_unique_variable(expr: Expr) -> HashSet<Ident> {
     match expr {
         Expr::Binary(b) => {
@@ -48,6 +47,27 @@ fn get_unique_variable(expr: Expr) -> HashSet<Ident> {
     }
 }
 
+fn get_unique_int_literals(expr: Expr) -> HashSet<LitInt> {
+    match expr {
+        Expr::Binary(b) => {
+            let mut left_unique = get_unique_int_literals(*b.left);
+            let right_unique = get_unique_int_literals(*b.right);
+            left_unique.extend(right_unique);
+            left_unique
+        }
+        Expr::Paren(p) => get_unique_int_literals(*p.expr),
+        Expr::Lit(l) => {
+            if let Lit::Int(lit) = l.lit {
+                [lit].into()
+            } else {
+                [].into()
+            }
+        }
+        Expr::Unary(u) => get_unique_int_literals(*u.expr),
+        _ => [].into(),
+    }
+}
+
 #[allow(dead_code)]
 fn declare_consts(ident: Ident) -> TokenStream {
     let name = format!("__{}", ident);
@@ -56,6 +76,25 @@ fn declare_consts(ident: Ident) -> TokenStream {
         let #ident = z3::ast::Int::new_const(&ctx, #name);
     }
 }
+
+fn declare_int_literals(lit: LitInt) -> TokenStream {
+    let name = format!("__{}", lit);
+    let ident = Ident::new(&name, Span::call_site());
+    quote! {
+        let #ident = z3::ast::Int::from_i64(&ctx, #lit);
+    }
+}
+
+// fn create_condition(name: &str, expr: Expr) -> Vec<Expr> {
+//     match expr {
+//         Expr::Binary(b) => {
+//
+//         },
+//         Expr::Paren(_) => todo!(),
+//         Expr::Unary(_) => todo!(),
+//         _ => panic!("Invalid expression"),
+//     }
+// }
 
 pub fn z3_verify(attr: TokenStream, item: TokenStream) -> Result<TokenStream> {
     let _attr = syn::parse2::<ExprBinary>(attr)?;
@@ -68,9 +107,10 @@ pub fn z3_verify(attr: TokenStream, item: TokenStream) -> Result<TokenStream> {
 mod tests {
     use proc_macro2::Span;
     use quote::{quote, ToTokens};
+    use syn::LitInt;
 
     #[test]
-    fn test_flatten_binaries_1() {
+    fn test_split_conditions_1() {
         let expr = quote! { a == b * c + d && a + b && (a + c || b + d) && !a };
         let expr = syn::parse2::<syn::Expr>(expr).unwrap();
         let flattened = super::split_conditions(expr);
@@ -82,7 +122,7 @@ mod tests {
     }
 
     #[test]
-    fn test_flatten_binaries_2() {
+    fn test_split_conditions_2() {
         let expr = quote! { a == b };
         let expr = syn::parse2::<syn::Expr>(expr).unwrap();
         let flattened = super::split_conditions(expr);
@@ -91,7 +131,7 @@ mod tests {
     }
 
     #[test]
-    fn test_flatten_binaries_3() {
+    fn test_split_conditions_3() {
         let expr = quote! { return };
         let expr = syn::parse2::<syn::Expr>(expr).unwrap();
         let flattened = super::split_conditions(expr);
@@ -99,7 +139,7 @@ mod tests {
     }
 
     #[test]
-    fn test_flatten_binaries_4() {
+    fn test_split_conditions_4() {
         let expr = quote! { (((a + b))) };
         let expr = syn::parse2::<syn::Expr>(expr).unwrap();
         let flattened = super::split_conditions(expr);
@@ -108,7 +148,7 @@ mod tests {
     }
 
     #[test]
-    fn test_flatten_binaries_5() {
+    fn test_split_conditions_5() {
         let expr = quote! { a > 1 };
         let expr = syn::parse2::<syn::Expr>(expr).unwrap();
         let flattened = super::split_conditions(expr);
@@ -160,5 +200,32 @@ mod tests {
         let ident = syn::Ident::new("a", Span::call_site());
         let res = super::declare_consts(ident);
         assert_eq!(res.to_string(), "let __a = z3 :: ast :: Int :: new_const (& ctx , \"__a\") ;");
+    }
+
+    #[test]
+    fn test_unique_literal_ints_1() {
+        let expr = quote! { 1 };
+        let expr = syn::parse2::<syn::Expr>(expr).unwrap();
+        let res = super::get_unique_int_literals(expr);
+        assert_eq!(res.len(), 1);
+        assert!(res.contains(&LitInt::new("1", Span::call_site())));
+    }
+
+    #[test]
+    fn test_unique_literal_ints_2() {
+        let expr = quote! { 1 + 2 + 3 + a + b + ((((c + d)))) };
+        let expr = syn::parse2::<syn::Expr>(expr).unwrap();
+        let res = super::get_unique_int_literals(expr);
+        assert_eq!(res.len(), 3);
+        assert!(res.contains(&LitInt::new("1", Span::call_site())));
+        assert!(res.contains(&LitInt::new("2", Span::call_site())));
+        assert!(res.contains(&LitInt::new("3", Span::call_site())));
+    }
+
+    #[test]
+    fn test_declare_int_literals() {
+        let int = LitInt::new("1", Span::call_site());
+        let res = super::declare_int_literals(int);
+        assert_eq!(res.to_string(), "let __1 = z3 :: ast :: Int :: from_i64 (& ctx , 1) ;");
     }
 }
