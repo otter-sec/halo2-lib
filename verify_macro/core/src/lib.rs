@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use anyhow::Result;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::{quote, ToTokens};
-use syn::{BinOp, Expr, ExprBinary, ItemFn, Lit, LitInt};
+use syn::{BinOp, Expr, ExprBinary, ItemFn, Lit, LitInt, UnOp};
 
 // Splits the constraints into a vector of unary, binary or parenthe expressions
 fn split_conditions(expr: Expr) -> Vec<Expr> {
@@ -97,6 +97,15 @@ fn bin_op_to_z3(op: BinOp) -> TokenStream {
         BinOp::Ne(_) => "ne",
         BinOp::Ge(_) => "ge",
         BinOp::Gt(_) => "gt",
+        _ => panic!("invalid"),
+    };
+    s.parse().unwrap()
+}
+
+fn un_op_to_z3(op: UnOp) -> TokenStream {
+    let s = match op {
+        UnOp::Not(_) => "not",
+        UnOp::Neg(_) => "neg",
         _ => panic!("invalid"),
     };
     s.parse().unwrap()
