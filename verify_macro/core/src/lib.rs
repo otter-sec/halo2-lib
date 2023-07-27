@@ -68,7 +68,6 @@ fn get_unique_int_literals(expr: Expr) -> HashSet<LitInt> {
     }
 }
 
-#[allow(dead_code)]
 fn declare_consts(ident: Ident) -> TokenStream {
     let name = format!("__{}", ident);
     let ident = Ident::new(&name, Span::call_site());
@@ -85,16 +84,23 @@ fn declare_int_literals(lit: LitInt) -> TokenStream {
     }
 }
 
-// fn create_condition(name: &str, expr: Expr) -> Vec<Expr> {
-//     match expr {
-//         Expr::Binary(b) => {
-//
-//         },
-//         Expr::Paren(_) => todo!(),
-//         Expr::Unary(_) => todo!(),
-//         _ => panic!("Invalid expression"),
-//     }
-// }
+fn bin_op_to_z3(op: BinOp) -> TokenStream {
+    let s = match op {
+        BinOp::Add(_) => "add",
+        BinOp::Sub(_) => "sub",
+        BinOp::Mul(_) => "mul",
+        BinOp::Div(_) => "div",
+        BinOp::Rem(_) => "rem",
+        BinOp::Eq(_) => "eq",
+        BinOp::Lt(_) => "lt",
+        BinOp::Le(_) => "le",
+        BinOp::Ne(_) => "ne",
+        BinOp::Ge(_) => "ge",
+        BinOp::Gt(_) => "gt",
+        _ => panic!("invalid"),
+    };
+    s.parse().unwrap()
+}
 
 pub fn z3_verify(attr: TokenStream, item: TokenStream) -> Result<TokenStream> {
     let _attr = syn::parse2::<ExprBinary>(attr)?;
