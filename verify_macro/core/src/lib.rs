@@ -68,9 +68,9 @@ fn get_unique_int_literals(expr: &Expr) -> HashSet<LitInt> {
     }
 }
 
-fn declare_const(ident: &Ident) -> TokenStream {
-    let name = format!("__{ident}");
-    let ident = Ident::new(&name, Span::call_site());
+fn declare_const(input_idx: u8, ident: &Ident) -> TokenStream {
+    let name = format!("input_{input_idx}");
+    let ident = Ident::new(&format!("__{ident}"), Span::call_site());
     quote! {
         let #ident = z3::ast::Int::new_const(&ctx, #name);
     }
@@ -168,17 +168,27 @@ fn declare_condition(name: String, expr: &Expr) -> TokenStream {
 
 pub fn z3_verify(attr: TokenStream, item: TokenStream) -> Result<TokenStream> {
     let attr = syn::parse2::<Expr>(attr)?;
-    let _conditions = get_constraints(&attr);
     let vars = get_unique_variables(&attr);
     let ints = get_unique_int_literals(&attr);
-    let const_declarations = vars.iter().map(declare_const);
+    let const_declarations = vars.iter().enumerate().map(|(i, v)| declare_const(i as u8, v));
     let int_declarations = ints.iter().map(declare_int_literal);
+    let constraints = get_constraints(&attr);
+    let conditions = constraints.iter().enumerate().map(|(i, c)| {
+        let name = format!("__condition_{}", i);
+        declare_condition(name, c)
+    });
 
     let item = syn::parse2::<ItemFn>(item)?;
+    let sig = item.sig;
+    let body = item.block.stmts;
+
     let res = quote! {
-        #(#const_declarations)*
-        #(#int_declarations)*
-        #item
+        #sig {
+            #(#const_declarations)*
+            #(#int_declarations)*
+            #(#conditions)*
+            #(#body)*
+        }
     };
     Ok(res)
 }
@@ -280,8 +290,11 @@ mod tests {
     #[test]
     fn test_declare_consts_1() {
         let ident = syn::Ident::new("a", Span::call_site());
-        let res = super::declare_const(&ident);
-        assert_eq!(res.to_string(), "let __a = z3 :: ast :: Int :: new_const (& ctx , \"__a\") ;");
+        let res = super::declare_const(0, &ident);
+        assert_eq!(
+            res.to_string(),
+            "let __a = z3 :: ast :: Int :: new_const (& ctx , \"input_0\") ;"
+        );
     }
 
     #[test]
@@ -430,7 +443,8 @@ mod tests {
     fn test_z3_verify() {
         let attr = quote! { a + b + c < 1 && a + b == 0 };
         let item = quote! {
-            fn foo(a: i32, b: i32) -> i32 {
+            fn foo() -> i32 {
+                println!("hello world");
             }
         };
         let r = z3_verify(attr, item).unwrap();
