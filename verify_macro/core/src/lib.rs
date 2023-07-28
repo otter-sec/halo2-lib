@@ -4,14 +4,13 @@ use std::collections::HashSet;
 use anyhow::Result;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::{quote, ToTokens};
-use syn::{BinOp, Expr, ItemFn, Lit, LitInt, UnOp};
+use syn::{BinOp, Expr, Lit, LitInt, UnOp};
 
 // Splits the constraints into a vector of unary, binary or parenthe expressions
 fn get_constraints(expr: &Expr) -> Vec<&Expr> {
     let bin_ex = match expr {
         Expr::Binary(b) => b,
-        Expr::Unary(_) => return vec![expr],
-        Expr::Paren(_) => return vec![expr],
+        Expr::Unary(_) | Expr::Paren(_) => return vec![expr],
         _ => return vec![],
     };
 
@@ -68,11 +67,11 @@ fn get_unique_int_literals(expr: &Expr) -> HashSet<LitInt> {
     }
 }
 
-fn declare_const(input_idx: u8, ident: &Ident) -> TokenStream {
+fn declare_const(input_idx: usize, ident: &Ident) -> TokenStream {
     let name = format!("input_{input_idx}");
     let ident = Ident::new(&format!("__{ident}"), Span::call_site());
     quote! {
-        let #ident = z3::ast::Int::new_const(&ctx, #name);
+        let #ident = z3::ast::Int::new_const(&ctx_z3, #name);
     }
 }
 
@@ -80,7 +79,7 @@ fn declare_int_literal(lit: &LitInt) -> TokenStream {
     let name = format!("__{lit}");
     let ident = Ident::new(&name, Span::call_site());
     quote! {
-        let #ident = z3::ast::Int::from_i64(&ctx, #lit);
+        let #ident = z3::ast::Int::from_i64(&ctx_z3, #lit);
     }
 }
 
@@ -115,12 +114,12 @@ fn expr_is_path_or_literal(expr: &Expr) -> bool {
     matches!(expr, Expr::Path(_) | Expr::Lit(_))
 }
 
-fn declare_condition(name: String, expr: &Expr) -> TokenStream {
+fn declare_condition(name: &str, expr: &Expr) -> TokenStream {
     fn create_condition(expr: &Expr) -> TokenStream {
         match expr {
             Expr::Binary(b) => {
                 let lhs = if expr_is_path_or_literal(&b.left) {
-                    let l = format!("__{}", b.left.to_token_stream().to_string());
+                    let l = format!("__{}", b.left.to_token_stream());
                     let l = Ident::new(&l, Span::call_site());
                     quote! { #l }
                 } else {
@@ -128,7 +127,7 @@ fn declare_condition(name: String, expr: &Expr) -> TokenStream {
                 };
 
                 let rhs = if expr_is_path_or_literal(&b.right) {
-                    let r = format!("__{}", b.right.to_token_stream().to_string());
+                    let r = format!("__{}", b.right.to_token_stream());
                     let r = Ident::new(&r, Span::call_site());
                     quote! { #r }
                 } else {
@@ -143,7 +142,7 @@ fn declare_condition(name: String, expr: &Expr) -> TokenStream {
             Expr::Paren(p) => create_condition(&p.expr),
             Expr::Unary(u) => {
                 let expr = if expr_is_path_or_literal(&u.expr) {
-                    let e = format!("__{}", u.expr.to_token_stream().to_string());
+                    let e = format!("__{}", u.expr.to_token_stream());
                     let e = Ident::new(&e, Span::call_site());
                     quote! { #e }
                 } else {
@@ -160,35 +159,43 @@ fn declare_condition(name: String, expr: &Expr) -> TokenStream {
     }
 
     let cond = create_condition(expr);
-    let id = Ident::new(&name, Span::call_site());
+    let id = Ident::new(name, Span::call_site());
     quote! {
         let #id = #cond;
     }
 }
 
-pub fn z3_verify(attr: TokenStream, item: TokenStream) -> Result<TokenStream> {
-    let attr = syn::parse2::<Expr>(attr)?;
-    let vars = get_unique_variables(&attr);
-    let ints = get_unique_int_literals(&attr);
-    let const_declarations = vars.iter().enumerate().map(|(i, v)| declare_const(i as u8, v));
+pub fn z3_verify(expr: TokenStream) -> Result<TokenStream> {
+    let item = syn::parse2::<Expr>(expr)?;
+    let vars = get_unique_variables(&item);
+    let ints = get_unique_int_literals(&item);
+    let const_declarations = vars.iter().enumerate().map(|(i, v)| declare_const(i, v));
     let int_declarations = ints.iter().map(declare_int_literal);
-    let constraints = get_constraints(&attr);
-    let conditions = constraints.iter().enumerate().map(|(i, c)| {
-        let name = format!("__condition_{}", i);
-        declare_condition(name, c)
-    });
+    let constraints = get_constraints(&item);
+    let mut condition_idents = vec![];
+    let mut conditions = vec![];
 
-    let item = syn::parse2::<ItemFn>(item)?;
-    let sig = item.sig;
-    let body = item.block.stmts;
+    for (i, c) in constraints.iter().enumerate() {
+        let name = format!("__condition_{i}");
+        let ident = Ident::new(&name, Span::call_site());
+        condition_idents.push(ident);
+        conditions.push(declare_condition(&name, c));
+    }
+
+    let goal = quote! {
+        let goal = z3::ast::Bool::and(&ctx_z3, &[#(#condition_idents),*]);
+    };
 
     let res = quote! {
-        #sig {
-            #(#const_declarations)*
-            #(#int_declarations)*
-            #(#conditions)*
-            #(#body)*
-        }
+        let cfg = z3::Config::new();
+        let ctx_z3 = z3::Context::new(&cfg);
+        let solver = z3::Solver::new(&ctx_z3);
+
+        #(#const_declarations)*
+        #(#int_declarations)*
+        #(#conditions)*
+        #goal
+        z3_formally_verify(ctx, &ctx_z3, &solver, &goal, &vec);
     };
     Ok(res)
 }
@@ -293,7 +300,7 @@ mod tests {
         let res = super::declare_const(0, &ident);
         assert_eq!(
             res.to_string(),
-            "let __a = z3 :: ast :: Int :: new_const (& ctx , \"input_0\") ;"
+            "let __a = z3 :: ast :: Int :: new_const (& ctx_z3 , \"input_0\") ;"
         );
     }
 
@@ -321,7 +328,7 @@ mod tests {
     fn test_declare_int_literals() {
         let int = LitInt::new("1", Span::call_site());
         let res = super::declare_int_literal(&int);
-        assert_eq!(res.to_string(), "let __1 = z3 :: ast :: Int :: from_i64 (& ctx , 1) ;");
+        assert_eq!(res.to_string(), "let __1 = z3 :: ast :: Int :: from_i64 (& ctx_z3 , 1) ;");
     }
 
     #[test]
@@ -441,13 +448,8 @@ mod tests {
 
     #[test]
     fn test_z3_verify() {
-        let attr = quote! { a + b + c < 1 && a + b == 0 };
-        let item = quote! {
-            fn foo() -> i32 {
-                println!("hello world");
-            }
-        };
-        let r = z3_verify(attr, item).unwrap();
+        let expr = quote! { a + b + c < 1 && a + b == 0 };
+        let r = z3_verify(expr).unwrap();
         println!("{}", r);
     }
 }
