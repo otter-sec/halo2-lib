@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.72"
+indexmap = "2.0.0"
 proc-macro2 = "1.0.66"
 quote = "1.0.31"
 syn = { version = "2.0.26", features = ["full", "extra-traits"] }

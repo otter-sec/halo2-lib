@@ -5,6 +5,7 @@ use halo2_base::gates::{
 use halo2_base::halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use halo2_base::utils::{z3_formally_verify, BigPrimeField};
 use halo2_base::Context;
+use verify_macro::z3_verify;
 // use z3::{ast::{Bool, Int}, Config, Solver};
 
 // Example of how to formally verify a circuit
@@ -25,21 +26,23 @@ fn z3_range_test<F: BigPrimeField>(
 
     // setting up a z3 solver and input the circuit and a to the solver.
     let vec = vec![&a];
-    let cfg = z3::Config::new();
-    let ctx_z3 = z3::Context::new(&cfg);
-    let solver = z3::Solver::new(&ctx_z3);
+    let max_range = 2 << range_bits;
+    z3_verify!(a >= 0 && a < max_range);
+    // let cfg = z3::Config::new();
+    // let ctx_z3 = z3::Context::new(&cfg);
+    // let solver = z3::Solver::new(&ctx_z3);
 
-    // specifications defined by users, input_0 is a (next input would be input_1 and so on)
-    // a >= 0
-    let a_ge_0 =
-        z3::ast::Int::new_const(&ctx_z3, "input_0").ge(&z3::ast::Int::from_u64(&ctx_z3, 0));
+    // // specifications defined by users, input_0 is a (next input would be input_1 and so on)
+    // // a >= 0
+    // let a_ge_0 =
+    //     z3::ast::Int::new_const(&ctx_z3, "input_0").ge(&z3::ast::Int::from_u64(&ctx_z3, 0));
     // a < 2**range_bits
-    let a_lt_2numbits = z3::ast::Int::new_const(&ctx_z3, "input_0")
-        .lt(&z3::ast::Int::from_u64(&ctx_z3, 2 << range_bits));
-    //  0 <= a < 2**range_bits
-    let goal = z3::ast::Bool::and(&ctx_z3, &[&a_ge_0, &a_lt_2numbits]);
+    // let a_lt_2numbits = z3::ast::Int::new_const(&ctx_z3, "input_0")
+    //     .lt(&z3::ast::Int::from_u64(&ctx_z3, 2 << range_bits));
+    // //  0 <= a < 2**range_bits
+    // let goal = z3::ast::Bool::and(&ctx_z3, &[&a_ge_0, &a_lt_2numbits]);
 
-    z3_formally_verify(ctx, &ctx_z3, &solver, &goal, &vec);
+    // z3_formally_verify(ctx, &ctx_z3, &solver, &goal, &vec);
 }
 
 #[test]
