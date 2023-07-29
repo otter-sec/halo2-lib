@@ -59,7 +59,7 @@ fn declare_const(input_idx: usize, ident: &Ident) -> TokenStream {
     let name = format!("input_{input_idx}");
     let ident = Ident::new(&format!("__{ident}"), Span::call_site());
     quote! {
-        let #ident = z3::ast::Int::new_const(&ctx_z3, #name);
+        let #ident = z3::ast::Int::new_const(&__ctx_z3, #name);
     }
 }
 
@@ -67,7 +67,7 @@ fn declare_int(exp: &Expr) -> TokenStream {
     let name = exp.to_token_stream().to_string();
     let ident = Ident::new(&format!("__{name}"), Span::call_site());
     quote! {
-        let #ident = z3::ast::Int::from_i64(&ctx_z3, #exp);
+        let #ident = z3::ast::Int::from_i64(&__ctx_z3, #exp);
     }
 }
 
@@ -185,14 +185,18 @@ fn const_array_to_set(consts: &ExprArray) -> Result<IndexSet<Ident>> {
 
 fn create_const_declarations(consts: &ExprArray) -> Result<TokenStream> {
     let mut res = vec![];
+    let mut vec_consts = vec![];
     for (i, v) in consts.elems.iter().enumerate() {
         let id = path_expr_to_ident(v)?;
         let d = declare_const(i, &id);
         res.push(d);
+        vec_consts.push(v);
     }
 
     Ok(quote! {
-        let vec = vec!#consts;
+        let __consts_vec = vec![
+            #(&#vec_consts),*
+        ];
         #(#res)*
     })
 }
@@ -213,7 +217,7 @@ fn create_conditions(consts_set: &IndexSet<Ident>, constraints: &Expr) -> TokenS
     }
 
     let goal = quote! {
-        let goal = z3::ast::Bool::and(&ctx_z3, &[#(&#condition_idents),*]);
+        let __goal = z3::ast::Bool::and(&__ctx_z3, &[#(&#condition_idents),*]);
     };
 
     quote! {
@@ -229,12 +233,12 @@ pub fn z3_verify(expr: &TokenStream) -> Result<TokenStream> {
     let const_declarations = create_const_declarations(&consts)?;
     let conditions = create_conditions(&consts_set, &constraints);
     let res = quote! {
-        let cfg = z3::Config::new();
-        let ctx_z3 = z3::Context::new(&cfg);
-        let solver = z3::Solver::new(&ctx_z3);
+        let __cfg = z3::Config::new();
+        let __ctx_z3 = z3::Context::new(&__cfg);
+        let __solver = z3::Solver::new(&__ctx_z3);
         #const_declarations
         #conditions
-        z3_formally_verify(ctx, &ctx_z3, &solver, &goal, &vec);
+        z3_formally_verify(ctx, &__ctx_z3, &__solver, &__goal, &__consts_vec);
     };
     Ok(res)
 }
@@ -299,7 +303,7 @@ mod tests {
         let expr = quote! { [a, b, c, d] };
         let expr = syn::parse2(expr).unwrap();
         let vars = super::create_const_declarations(&expr).unwrap();
-        let expected = "let vec = vec ! [a , b , c , d] ; let __a = z3 :: ast :: Int :: new_const (& ctx_z3 , \"input_0\") ; let __b = z3 :: ast :: Int :: new_const (& ctx_z3 , \"input_1\") ; let __c = z3 :: ast :: Int :: new_const (& ctx_z3 , \"input_2\") ; let __d = z3 :: ast :: Int :: new_const (& ctx_z3 , \"input_3\") ;";
+        let expected = "let __consts_vec = vec ! [& a , & b , & c , & d] ; let __a = z3 :: ast :: Int :: new_const (& __ctx_z3 , \"input_0\") ; let __b = z3 :: ast :: Int :: new_const (& __ctx_z3 , \"input_1\") ; let __c = z3 :: ast :: Int :: new_const (& __ctx_z3 , \"input_2\") ; let __d = z3 :: ast :: Int :: new_const (& __ctx_z3 , \"input_3\") ;";
         assert_eq!(vars.to_string(), expected);
     }
 
@@ -309,7 +313,7 @@ mod tests {
         let res = super::declare_const(0, &ident);
         assert_eq!(
             res.to_string(),
-            "let __a = z3 :: ast :: Int :: new_const (& ctx_z3 , \"input_0\") ;"
+            "let __a = z3 :: ast :: Int :: new_const (& __ctx_z3 , \"input_0\") ;"
         );
     }
 
@@ -468,7 +472,7 @@ mod tests {
         let b_id = Ident::new("b", Span::call_site());
         let set = [a_id, b_id].into();
         let conditions = super::create_conditions(&set, &expr);
-        let expected = "let __condition_0 = (__a) . eq (& __b) ; let goal = z3 :: ast :: Bool :: and (& ctx_z3 , & [& __condition_0]) ;";
+        let expected = "let __condition_0 = (__a) . eq (& __b) ; let __goal = z3 :: ast :: Bool :: and (& __ctx_z3 , & [& __condition_0]) ;";
         assert_eq!(conditions.to_string(), expected);
     }
 
@@ -480,7 +484,7 @@ mod tests {
         let b_id = Ident::new("b", Span::call_site());
         let set = [a_id, b_id].into();
         let conditions = super::create_conditions(&set, &expr);
-        let expected = "let __0 = z3 :: ast :: Int :: from_i64 (& ctx_z3 , 0) ; let __3 = z3 :: ast :: Int :: from_i64 (& ctx_z3 , 3) ; let __condition_0 = (__a) . eq (& __b) ; let __condition_1 = (__a) . gt (& __0) ; let __condition_2 = (__b) . lt (& __3) ; let goal = z3 :: ast :: Bool :: and (& ctx_z3 , & [& __condition_0 , & __condition_1 , & __condition_2]) ;";
+        let expected = "let __0 = z3 :: ast :: Int :: from_i64 (& __ctx_z3 , 0) ; let __3 = z3 :: ast :: Int :: from_i64 (& __ctx_z3 , 3) ; let __condition_0 = (__a) . eq (& __b) ; let __condition_1 = (__a) . gt (& __0) ; let __condition_2 = (__b) . lt (& __3) ; let __goal = z3 :: ast :: Bool :: and (& __ctx_z3 , & [& __condition_0 , & __condition_1 , & __condition_2]) ;";
         assert_eq!(conditions.to_string(), expected);
     }
 
@@ -491,7 +495,7 @@ mod tests {
         let a_id = Ident::new("a", Span::call_site());
         let set = [a_id].into();
         let conditions = super::create_conditions(&set, &expr);
-        let expected = "let __test_int = z3 :: ast :: Int :: from_i64 (& ctx_z3 , test_int) ; let __condition_0 = (__a) . gt (& __test_int) ; let goal = z3 :: ast :: Bool :: and (& ctx_z3 , & [& __condition_0]) ;";
+        let expected = "let __test_int = z3 :: ast :: Int :: from_i64 (& __ctx_z3 , test_int) ; let __condition_0 = (__a) . gt (& __test_int) ; let __goal = z3 :: ast :: Bool :: and (& __ctx_z3 , & [& __condition_0]) ;";
         assert_eq!(conditions.to_string(), expected);
     }
 

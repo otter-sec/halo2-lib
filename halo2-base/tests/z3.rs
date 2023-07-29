@@ -23,11 +23,12 @@ fn z3_range_test<F: BigPrimeField>(
 
     // First range check a
     chip.range_check(ctx, a, range_bits);
+    let max_range = 2 << range_bits;
+    // This macro is the equivalent of all the commented out code below it
+    z3_verify!([a]; a >= 0 && a < max_range);
 
     // setting up a z3 solver and input the circuit and a to the solver.
-    let vec = vec![&a];
-    let max_range = 2 << range_bits;
-    z3_verify!(a >= 0 && a < max_range);
+    // let vec = vec![&a];
     // let cfg = z3::Config::new();
     // let ctx_z3 = z3::Context::new(&cfg);
     // let solver = z3::Solver::new(&ctx_z3);
