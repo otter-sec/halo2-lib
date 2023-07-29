@@ -438,7 +438,7 @@ pub fn z3_formally_verify<F: BigPrimeField>(
             for j in 0..inputs.to_vec().len() {
                 if inputs[j].cell.unwrap().offset == i {
                     ins.push(Int::new_const(&ctx, format!("input_{}", j)));
-                    constraints.push(
+                    /*constraints.push(
                         ins[j].gt(&Int::from_str(
                             &ctx,
                             &format!("{}", BigInt::from_biguint(Sign::Minus, &modulus / 2u32)),
@@ -451,8 +451,8 @@ pub fn z3_formally_verify<F: BigPrimeField>(
                             &format!("{}", BigInt::from_biguint(Sign::Plus, &modulus / 2u32)),
                         )
                         .unwrap()),
-                    );
-                    constraints.push((&ins[j] + &p).modulo(&p)._eq(&advice[i]));
+                    );*/
+                    constraints.push((&ins[j]).modulo(&p)._eq(&advice[i]));
                 }
             }
         }
