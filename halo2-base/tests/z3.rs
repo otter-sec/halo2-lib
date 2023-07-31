@@ -77,7 +77,7 @@ fn z3_check_less_than<F: BigPrimeField>(
     // First range check a
     chip.check_less_than(ctx, a, b, range_bits);
     let max_range = 2 << range_bits;
-    z3_verify!([a, b]; a < 0 || a > max_range || b < 0 || b > max_range  ||  a < b);
+    z3_verify!([a, b]; a < 0 || a >= max_range || b < 0 || b >= max_range  ||  a < b);
 }
 
 #[test]
