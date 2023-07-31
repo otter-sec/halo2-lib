@@ -433,28 +433,26 @@ pub fn z3_formally_verify<F: BigPrimeField>(
     .unwrap();
     let modulus = modulus::<F>();
     for i in 0..circuit.advice.len() {
-        for _ in 0..inputs.to_vec().len() {
-            advice.push(Int::new_const(&ctx, format!("advice_{}", i)));
-            for j in 0..inputs.to_vec().len() {
-                if inputs[j].cell.unwrap().offset == i {
-                    ins.push(Int::new_const(&ctx, format!("input_{}", j)));
-                    /*constraints.push(
-                        ins[j].gt(&Int::from_str(
-                            &ctx,
-                            &format!("{}", BigInt::from_biguint(Sign::Minus, &modulus / 2u32)),
-                        )
-                        .unwrap()),
-                    );
-                    constraints.push(
-                        ins[j].lt(&Int::from_str(
-                            &ctx,
-                            &format!("{}", BigInt::from_biguint(Sign::Plus, &modulus / 2u32)),
-                        )
-                        .unwrap()),
-                    );*/
-                    constraints.push((&ins[j]).modulo(&p)._eq(&ins[j]));
-                    constraints.push((&ins[j])._eq(&advice[i]));
-                }
+        advice.push(Int::new_const(&ctx, format!("advice_{}", i)));
+        for j in 0..inputs.to_vec().len() {
+            if inputs[j].cell.unwrap().offset == i {
+                ins.push(Int::new_const(&ctx, format!("input_{}", j)));
+                /*constraints.push(
+                    ins[j].gt(&Int::from_str(
+                        &ctx,
+                        &format!("{}", BigInt::from_biguint(Sign::Minus, &modulus / 2u32)),
+                    )
+                    .unwrap()),
+                );
+                constraints.push(
+                    ins[j].lt(&Int::from_str(
+                        &ctx,
+                        &format!("{}", BigInt::from_biguint(Sign::Plus, &modulus / 2u32)),
+                    )
+                    .unwrap()),
+                );*/
+                constraints.push((&ins[j]).modulo(&p)._eq(&ins[j]));
+                constraints.push((&ins[j])._eq(&advice[i]));
             }
         }
     }
