@@ -60,3 +60,37 @@ fn test_z3_range_check() {
 
     MockProver::run(k as u32, &circuit, vec![]).unwrap().assert_satisfied();
 }
+
+
+fn z3_check_less_than<F: BigPrimeField>(
+    ctx: &mut Context<F>,
+    lookup_bits: usize,
+    inputs: [F; 2],
+    range_bits: usize,
+    _lt_bits: usize,
+) {
+    let [a, b]: [_; 2] = ctx.assign_witnesses(inputs).try_into().unwrap();
+    let chip = RangeChip::default(lookup_bits);
+
+    std::env::set_var("LOOKUP_BITS", lookup_bits.to_string());
+
+    // First range check a
+    chip.check_less_than(ctx, a, b, range_bits);
+    let max_range = 2 << range_bits;
+    z3_verify!([a, b]; a < 0 || a > max_range || b < 0 || b > max_range  ||  a < b);
+}
+
+#[test]
+fn test_z3_check_less_than() {
+    let k = 11;
+    let inputs = [100, 101].map(Fr::from);
+    let mut builder = GateThreadBuilder::mock();
+    z3_check_less_than(builder.main(0), 3, inputs, 8, 8);
+
+    // auto-tune circuit
+    builder.config(k, Some(9));
+    // create circuit
+    let circuit = RangeCircuitBuilder::mock(builder);
+
+    MockProver::run(k as u32, &circuit, vec![]).unwrap().assert_satisfied();
+}
