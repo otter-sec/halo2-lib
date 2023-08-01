@@ -473,8 +473,8 @@ pub fn z3_formally_verify<F: BigPrimeField>(
     let refs_par = constraints.iter().collect::<Vec<&Bool>>();
     let all_constraints = Bool::and(ctx, &refs_par);
     solver.assert(&all_constraints);
-    solver.assert(&goal);
-    println!("GOALS {:?}", goal);
+    solver.assert(&goal.not());
+    println!("GOAL {:?}", goal);
     //the solver should return Unsat meaning no values should satisfy all constraints but not goal
     assert_eq!(solver.check(), SatResult::Unsat);
 }
