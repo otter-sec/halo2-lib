@@ -61,7 +61,6 @@ fn test_z3_range_check() {
     MockProver::run(k as u32, &circuit, vec![]).unwrap().assert_satisfied();
 }
 
-
 fn z3_check_less_than<F: BigPrimeField>(
     ctx: &mut Context<F>,
     lookup_bits: usize,
