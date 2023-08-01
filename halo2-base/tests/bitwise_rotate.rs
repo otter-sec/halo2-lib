@@ -11,9 +11,9 @@ use halo2_base::{
     utils::testing::{check_proof, gen_proof},
 };
 
+use halo2_base::halo2_proofs::halo2curves::bn256::Fr;
 use halo2_proofs_axiom::halo2curves::FieldExt;
 use rand::rngs::OsRng;
-use halo2_base::halo2_proofs::halo2curves::bn256::Fr;
 
 // soundness checks for bitwise rotation functions
 fn test_bitwise_rotate_gen<const BIT: usize, const NUM_BITS: usize>(

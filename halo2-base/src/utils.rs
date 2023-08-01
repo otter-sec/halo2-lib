@@ -431,17 +431,28 @@ pub fn z3_formally_verify<F: BigPrimeField>(
         "21888242871839275222246405745257275088548364400416034343698204186575808495617",
     )
     .unwrap();
-    let modulus = modulus::<F>();
+    let _modulus = modulus::<F>();
     for i in 0..circuit.advice.len() {
+        advice.push(Int::new_const(ctx, format!("advice_{i}")));
+        constraints.push((advice[i])._eq(&advice[i].modulo(&p)));
         for j in 0..inputs.to_vec().len() {
-            advice.push(Int::new_const(&ctx, format!("advice_{}", i)));
-            for j in 0..inputs.to_vec().len(){
-                if inputs[j].cell.unwrap().offset == i {
-                    ins.push(Int::new_const(&ctx, format!("input_{}", j)));
-                    constraints.push(ins[j].gt(&Int::from_str(&ctx, &format!("{}", BigInt::from_biguint(Sign::Minus, &modulus/2u32 ))).unwrap()));
-                    constraints.push(ins[j].lt(&Int::from_str(&ctx, &format!("{}", BigInt::from_biguint(Sign::Plus, &modulus/2u32 ))).unwrap()));
-                    constraints.push((&ins[j]+&p).modulo(&p)._eq(&advice[i]));
-                }
+            if inputs[j].cell.unwrap().offset == i {
+                ins.push(Int::new_const(ctx, format!("input_{j}")));
+                /*constraints.push(
+                    ins[j].gt(&Int::from_str(
+                        &ctx,
+                        &format!("{}", BigInt::from_biguint(Sign::Minus, &modulus / 2u32)),
+                    )
+                    .unwrap()),
+                );
+                constraints.push(
+                    ins[j].lt(&Int::from_str(
+                        &ctx,
+                        &format!("{}", BigInt::from_biguint(Sign::Plus, &modulus / 2u32)),
+                    )
+                    .unwrap()),
+                );*/
+                constraints.push((ins[j])._eq(&advice[i]));
             }
         }
     }
@@ -474,10 +485,8 @@ pub fn z3_formally_verify<F: BigPrimeField>(
     }
     let refs_par = constraints.iter().collect::<Vec<&Bool>>();
     let all_constraints = Bool::and(ctx, &refs_par);
-
     solver.assert(&all_constraints);
-    solver.assert(&goal.not());
-
+    solver.assert(goal);
     //the solver should return Unsat meaning no values should satisfy all constraints but not goal
     assert_eq!(solver.check(), SatResult::Unsat);
 }

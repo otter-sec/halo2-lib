@@ -1,0 +1,11 @@
+[package]
+name = "verify_macro"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+verify_macro_core = { path = "core" }
+
+[lib]
+path = "src/lib.rs"
+proc-macro = true
