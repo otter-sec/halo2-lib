@@ -422,6 +422,14 @@ pub fn z3_formally_verify<F: BigPrimeField>(
 ) {
     let circuit = ctx_circuit;
 
+    let z3_constraints = &circuit.z3_constraints;
+
+    // z3_constraints = (vec![check_cell],"check_cell >= 0 && check_cell < max_range")
+    // Can you turn the z3_constraints to
+    // let check_cell_ge_0 = z3::ast::Int::new_const(&__ctx_z3, "inner_const_0").ge(&z3::ast::Int::from_u64(&__ctx_z3, 0));
+    // let check_cell_lt_2numbits = z3::ast::Int::new_const(&__ctx_z3, "inner_const_0").lt(&z3::ast::Int::from_u64(&__ctx_z3, 2 << range_bits));
+    // let inner_const = z3::ast::Bool::and(&__ctx_z3, &[&check_cell_ge_0, &check_cell_lt_2numbits]);
+
     let mut constraints = Vec::new();
 
     let mut advice = Vec::new();

@@ -105,3 +105,28 @@ fn test_z3_check_less_than() {
     z3_verify!([a, b]; a < 0 || a >= max_range || b < 0 || b >= max_range  ||  a < b);
 
 }
+
+#[test]
+fn test_z3_check_less_than_const() {
+    let k = 11;
+    let inputs = [100, 10].map(Fr::from);
+
+    let mut builder = GateThreadBuilder::mock();
+
+    let ctx = builder.main(0);
+
+    let [a, b]: [_; 2] = ctx.assign_witnesses(inputs).try_into().unwrap();
+    let chip = RangeChip::default(3);
+    let lookup_bits = 3;
+    let range_bits = 8;
+    std::env::set_var("LOOKUP_BITS", lookup_bits.to_string());
+
+
+    chip.check_less_than_z3const(ctx, a, b, range_bits);
+
+    let z3_constraints = &ctx.z3_constraints;
+
+    let max_range = 2 << range_bits;
+    z3_verify!([a, b]; a < 0 || a >= max_range || b < 0 || b >= max_range  ||  a < b);
+
+}
