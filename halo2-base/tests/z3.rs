@@ -8,7 +8,7 @@ use halo2_base::gates::{
 use halo2_base::halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
 use halo2_base::utils::{fe_to_biguint, z3_formally_verify, BigPrimeField};
 use halo2_base::Context;
-use num_bigint::BigUint;
+use z3::ast::Ast;
 use verify_macro::z3_verify;
 // use z3::{ast::{Bool, Int}, Config, Solver};
 
@@ -29,7 +29,7 @@ fn z3_range_test<F: BigPrimeField>(
     chip.range_check(ctx, a, range_bits);
     let max_range = 2 << range_bits;
     // This macro is the equivalent of all the commented out code below it
-    z3_verify!([a]; a >= 0 && a < max_range);
+    z3_verify!([a]; [a >= 0, a < max_range]; "and");
 
     // setting up a z3 solver and input the circuit and a to the solver.
     // let vec = vec![&a];
@@ -82,7 +82,7 @@ fn test_z3_div_mod() {
     println!("div : {:?}", div.value());
     println!("rem : {:?}", rem.value());
 
-    z3_verify!([a, b, div, rem]; a = b * div + rem);
+    z3_verify!([a, b, div, rem]; [a == b * div + rem]; "and");
 }
 
 #[test]
@@ -101,7 +101,7 @@ fn test_z3_check_less_than() {
     std::env::set_var("LOOKUP_BITS", lookup_bits.to_string());
     chip.check_less_than(ctx, a, b, range_bits);
     let max_range = 2 << range_bits;
-    z3_verify!([a, b]; a < 0 || a >= max_range || b < 0 || b >= max_range  ||  a < b);
+    z3_verify!([a, b]; [a < 0, a >= max_range, b < 0, b >= max_range, a < b]; "or");
 }
 
 #[test]
@@ -124,5 +124,5 @@ fn test_z3_check_less_than_const() {
     let z3_constraints = &ctx.z3_constraints;
 
     let max_range = 2 << range_bits;
-    z3_verify!([a, b]; a < 0 || a >= max_range || b < 0 || b >= max_range  ||  a < b);
+    z3_verify!([a, b]; [a < 0, a >= max_range, b < 0, b >= max_range, a < b]; "or");
 }
