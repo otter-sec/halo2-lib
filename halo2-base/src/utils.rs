@@ -422,8 +422,7 @@ pub fn z3_formally_verify<F: BigPrimeField>(
 ) {
     let circuit = ctx_circuit;
 
-    let z3_constraints = &circuit.z3_constraints;
-
+    // let z3_constraints = &circuit.z3_constraints;
     // z3_constraints = (vec![check_cell],"check_cell >= 0 && check_cell < max_range")
     // Can you turn the z3_constraints to
     // let check_cell_ge_0 = z3::ast::Int::new_const(&__ctx_z3, "inner_const_0").ge(&z3::ast::Int::from_u64(&__ctx_z3, 0));

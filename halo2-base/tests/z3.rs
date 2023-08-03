@@ -1,15 +1,15 @@
-extern crate num_bigint;
 extern crate halo2_base;
+extern crate num_bigint;
 
 use halo2_base::gates::{
     builder::{GateThreadBuilder, RangeCircuitBuilder},
     range::{RangeChip, RangeInstructions},
 };
 use halo2_base::halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
-use halo2_base::utils::{z3_formally_verify, BigPrimeField, fe_to_biguint};
+use halo2_base::utils::{fe_to_biguint, z3_formally_verify, BigPrimeField};
 use halo2_base::Context;
-use verify_macro::z3_verify;
 use num_bigint::BigUint;
+use verify_macro::z3_verify;
 // use z3::{ast::{Bool, Int}, Config, Solver};
 
 // Example of how to formally verify a circuit
@@ -79,11 +79,10 @@ fn test_z3_div_mod() {
     let lookup_bits = 3;
     std::env::set_var("LOOKUP_BITS", lookup_bits.to_string());
     let (div, rem) = chip.div_mod(ctx, a, fe_to_biguint(b.value()), 8);
-    println!("div : {:?}", div.value() );
-    println!("rem : {:?}", rem.value() );
+    println!("div : {:?}", div.value());
+    println!("rem : {:?}", rem.value());
 
     z3_verify!([a, b, div, rem]; a = b * div + rem);
-
 }
 
 #[test]
@@ -103,7 +102,6 @@ fn test_z3_check_less_than() {
     chip.check_less_than(ctx, a, b, range_bits);
     let max_range = 2 << range_bits;
     z3_verify!([a, b]; a < 0 || a >= max_range || b < 0 || b >= max_range  ||  a < b);
-
 }
 
 #[test]
@@ -121,12 +119,10 @@ fn test_z3_check_less_than_const() {
     let range_bits = 8;
     std::env::set_var("LOOKUP_BITS", lookup_bits.to_string());
 
-
     chip.check_less_than_z3const(ctx, a, b, range_bits);
 
     let z3_constraints = &ctx.z3_constraints;
 
     let max_range = 2 << range_bits;
     z3_verify!([a, b]; a < 0 || a >= max_range || b < 0 || b >= max_range  ||  a < b);
-
 }

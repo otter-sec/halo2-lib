@@ -9,7 +9,7 @@ use crate::{
     },
     utils::{
         biguint_to_fe, bit_length, decompose_fe_to_u64_limbs, fe_to_biguint, BigPrimeField,
-        ScalarField,z3_formally_verify
+        ScalarField,
     },
     AssignedValue, Context,
     QuantumCell::{self, Constant, Existing, Witness},
@@ -20,9 +20,6 @@ use num_traits::One;
 use std::{cmp::Ordering, ops::Shl};
 
 use super::flex_gate::GateChip;
-use z3::ast::Bool;
-use verify_macro::z3_verify;
-use proc_macro::TokenStream;
 /// Specifies the gate strategy for the range chip
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum RangeStrategy {
@@ -59,7 +56,6 @@ pub struct RangeConfig<F: ScalarField> {
     /// Gate Strategy used for specifying advice values.
     _strategy: RangeStrategy,
 }
-
 
 impl<F: ScalarField> RangeConfig<F> {
     /// Generates a new [RangeConfig] with the specified parameters.
@@ -221,6 +217,7 @@ pub trait RangeInstructions<F: ScalarField> {
         num_bits: usize,
     );
 
+    /// Constraints that a is less than b using a Z3 constant.
     fn check_less_than_z3const(
         &self,
         ctx: &mut Context<F>,
@@ -455,7 +452,6 @@ pub struct RangeChip<F: ScalarField> {
     /// [Vec] of powers of `2 ** lookup_bits` represented as [QuantumCell::Constant].
     /// These are precomputed and cached as a performance optimization for later limb decompositions. We precompute up to the higher power that fits in `F`, which is `2 ** ((F::CAPACITY / lookup_bits) * lookup_bits)`.
     pub limb_bases: Vec<QuantumCell<F>>,
-
 }
 
 impl<F: ScalarField> RangeChip<F> {
@@ -475,7 +471,7 @@ impl<F: ScalarField> RangeChip<F> {
         let gate = GateChip::new(match strategy {
             RangeStrategy::Vertical => GateStrategy::Vertical,
         });
-        Self { strategy, gate, lookup_bits, limb_bases}
+        Self { strategy, gate, lookup_bits, limb_bases }
     }
 
     /// Creates a new [RangeChip] with the default strategy and provided lookup_bits.
@@ -601,7 +597,6 @@ impl<F: ScalarField> RangeInstructions<F> for RangeChip<F> {
         self.range_check(ctx, check_cell, num_bits);
     }
 
-
     fn check_less_than_z3const(
         &self,
         ctx: &mut Context<F>,
@@ -630,9 +625,11 @@ impl<F: ScalarField> RangeInstructions<F> for RangeChip<F> {
             }
         };
 
+        // TODO: fix this
+        #[allow(unused_variables)]
         let max_range = 2 << num_bits;
         let cst = String::from("check_cell >= 0 && check_cell < max_range");
-        ctx.z3_constraints.push((vec![check_cell],cst));
+        ctx.z3_constraints.push((vec![check_cell], cst));
     }
     /// Constrains whether `a` is in `[0, b)`, and returns 1 if `a` < `b`, otherwise 0.
     ///
