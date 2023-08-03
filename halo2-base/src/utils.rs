@@ -422,6 +422,14 @@ pub fn z3_formally_verify<F: BigPrimeField>(
 ) {
     let circuit = ctx_circuit;
 
+    let z3_constraints = &circuit.z3_constraints;
+
+    // z3_constraints = (vec![check_cell],"check_cell >= 0 && check_cell < max_range")
+    // Can you turn the z3_constraints to
+    // let check_cell_ge_0 = z3::ast::Int::new_const(&__ctx_z3, "inner_const_0").ge(&z3::ast::Int::from_u64(&__ctx_z3, 0));
+    // let check_cell_lt_2numbits = z3::ast::Int::new_const(&__ctx_z3, "inner_const_0").lt(&z3::ast::Int::from_u64(&__ctx_z3, 2 << range_bits));
+    // let inner_const = z3::ast::Bool::and(&__ctx_z3, &[&check_cell_ge_0, &check_cell_lt_2numbits]);
+
     let mut constraints = Vec::new();
 
     let mut advice = Vec::new();
@@ -431,33 +439,20 @@ pub fn z3_formally_verify<F: BigPrimeField>(
         "21888242871839275222246405745257275088548364400416034343698204186575808495617",
     )
     .unwrap();
-    let _modulus = modulus::<F>();
+    for j in 0..inputs.to_vec().len() {
+        ins.push(Int::new_const(&ctx, format!("input_{}", j)));
+    }
     for i in 0..circuit.advice.len() {
         advice.push(Int::new_const(ctx, format!("advice_{i}")));
         constraints.push((advice[i])._eq(&advice[i].modulo(&p)));
         for j in 0..inputs.to_vec().len() {
             if inputs[j].cell.unwrap().offset == i {
-                ins.push(Int::new_const(ctx, format!("input_{j}")));
-                /*constraints.push(
-                    ins[j].gt(&Int::from_str(
-                        &ctx,
-                        &format!("{}", BigInt::from_biguint(Sign::Minus, &modulus / 2u32)),
-                    )
-                    .unwrap()),
-                );
-                constraints.push(
-                    ins[j].lt(&Int::from_str(
-                        &ctx,
-                        &format!("{}", BigInt::from_biguint(Sign::Plus, &modulus / 2u32)),
-                    )
-                    .unwrap()),
-                );*/
-                constraints.push((ins[j])._eq(&advice[i]));
+                constraints.push((&ins[j])._eq(&advice[i]));
             }
         }
     }
-    let lookup_bits: usize = var("LOOKUP_BITS").unwrap().parse().unwrap();
 
+    let lookup_bits: usize = var("LOOKUP_BITS").unwrap().parse().unwrap();
     for a in circuit.cells_to_lookup.iter() {
         assert!(a.cell.unwrap().context_id == 0);
         let i = a.cell.unwrap().offset;
@@ -486,7 +481,8 @@ pub fn z3_formally_verify<F: BigPrimeField>(
     let refs_par = constraints.iter().collect::<Vec<&Bool>>();
     let all_constraints = Bool::and(ctx, &refs_par);
     solver.assert(&all_constraints);
-    solver.assert(goal);
+    solver.assert(&goal.not());
+    println!("GOAL {:?}", goal);
     //the solver should return Unsat meaning no values should satisfy all constraints but not goal
     assert_eq!(solver.check(), SatResult::Unsat);
 }

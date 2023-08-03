@@ -10,6 +10,8 @@
 #![warn(missing_docs)]
 
 extern crate num_bigint;
+extern crate z3;
+extern crate proc_macro;
 
 // Different memory allocator options:
 #[cfg(feature = "jemallocator")]
@@ -40,7 +42,7 @@ pub use halo2_proofs_axiom as halo2_proofs;
 
 use crate::halo2_proofs::plonk::Assigned;
 use utils::ScalarField;
-
+use proc_macro::TokenStream;
 /// Module that contains the main API for creating and working with circuits.
 pub mod gates;
 /// Module for SafeType which enforce value range and realted functions.
@@ -173,6 +175,8 @@ pub struct Context<F: ScalarField> {
     ///
     /// Assumes the constant and `advice` cell are in the same [Context].
     pub constant_equality_constraints: Vec<(F, ContextCell)>,
+
+    pub z3_constraints: Vec<(Vec<AssignedValue<F>>,String)>,
 }
 
 impl<F: ScalarField> Context<F> {
@@ -189,6 +193,7 @@ impl<F: ScalarField> Context<F> {
             selector: Vec::new(),
             advice_equality_constraints: Vec::new(),
             constant_equality_constraints: Vec::new(),
+            z3_constraints: Vec::new(),
         }
     }
 

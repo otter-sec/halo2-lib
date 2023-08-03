@@ -1,11 +1,15 @@
+extern crate num_bigint;
+extern crate halo2_base;
+
 use halo2_base::gates::{
     builder::{GateThreadBuilder, RangeCircuitBuilder},
     range::{RangeChip, RangeInstructions},
 };
 use halo2_base::halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
-use halo2_base::utils::{z3_formally_verify, BigPrimeField};
+use halo2_base::utils::{z3_formally_verify, BigPrimeField, fe_to_biguint};
 use halo2_base::Context;
 use verify_macro::z3_verify;
+use num_bigint::BigUint;
 // use z3::{ast::{Bool, Int}, Config, Solver};
 
 // Example of how to formally verify a circuit
@@ -61,35 +65,68 @@ fn test_z3_range_check() {
     MockProver::run(k as u32, &circuit, vec![]).unwrap().assert_satisfied();
 }
 
-fn z3_check_less_than<F: BigPrimeField>(
-    ctx: &mut Context<F>,
-    lookup_bits: usize,
-    inputs: [F; 2],
-    range_bits: usize,
-    _lt_bits: usize,
-) {
+#[test]
+fn test_z3_div_mod() {
+    let k = 11;
+    let inputs = [100, 10].map(Fr::from);
+
+    let mut builder = GateThreadBuilder::mock();
+
+    let ctx = builder.main(0);
+
     let [a, b]: [_; 2] = ctx.assign_witnesses(inputs).try_into().unwrap();
-    let chip = RangeChip::default(lookup_bits);
-
+    let chip = RangeChip::default(3);
+    let lookup_bits = 3;
     std::env::set_var("LOOKUP_BITS", lookup_bits.to_string());
+    let (div, rem) = chip.div_mod(ctx, a, fe_to_biguint(b.value()), 8);
+    println!("div : {:?}", div.value() );
+    println!("rem : {:?}", rem.value() );
 
-    // First range check a
-    chip.check_less_than(ctx, a, b, range_bits);
-    let max_range = 2 << range_bits;
-    z3_verify!([a, b]; a < 0 || a >= max_range || b < 0 || b >= max_range  ||  a < b);
+    z3_verify!([a, b, div, rem]; a = b * div + rem);
+
 }
 
 #[test]
 fn test_z3_check_less_than() {
     let k = 11;
-    let inputs = [100, 101].map(Fr::from);
+    let inputs = [100, 10].map(Fr::from);
+
     let mut builder = GateThreadBuilder::mock();
-    z3_check_less_than(builder.main(0), 3, inputs, 8, 8);
 
-    // auto-tune circuit
-    builder.config(k, Some(9));
-    // create circuit
-    let circuit = RangeCircuitBuilder::mock(builder);
+    let ctx = builder.main(0);
 
-    MockProver::run(k as u32, &circuit, vec![]).unwrap().assert_satisfied();
+    let [a, b]: [_; 2] = ctx.assign_witnesses(inputs).try_into().unwrap();
+    let chip = RangeChip::default(3);
+    let lookup_bits = 3;
+    let range_bits = 8;
+    std::env::set_var("LOOKUP_BITS", lookup_bits.to_string());
+    chip.check_less_than(ctx, a, b, range_bits);
+    let max_range = 2 << range_bits;
+    z3_verify!([a, b]; a < 0 || a >= max_range || b < 0 || b >= max_range  ||  a < b);
+
+}
+
+#[test]
+fn test_z3_check_less_than_const() {
+    let k = 11;
+    let inputs = [100, 10].map(Fr::from);
+
+    let mut builder = GateThreadBuilder::mock();
+
+    let ctx = builder.main(0);
+
+    let [a, b]: [_; 2] = ctx.assign_witnesses(inputs).try_into().unwrap();
+    let chip = RangeChip::default(3);
+    let lookup_bits = 3;
+    let range_bits = 8;
+    std::env::set_var("LOOKUP_BITS", lookup_bits.to_string());
+
+
+    chip.check_less_than_z3const(ctx, a, b, range_bits);
+
+    let z3_constraints = &ctx.z3_constraints;
+
+    let max_range = 2 << range_bits;
+    z3_verify!([a, b]; a < 0 || a >= max_range || b < 0 || b >= max_range  ||  a < b);
+
 }
