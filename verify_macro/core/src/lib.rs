@@ -2,28 +2,7 @@ use anyhow::{Context, Result};
 use indexmap::IndexSet;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::{quote, ToTokens};
-use syn::{BinOp, Expr, ExprArray, Lit, UnOp};
-
-// Splits the constraints into a vector of unary, binary or parenthe expressions
-fn split_constraints(expr: &Expr) -> Vec<&Expr> {
-    let bin_ex = match expr {
-        Expr::Binary(b) => b,
-        Expr::Unary(_) | Expr::Paren(_) => return vec![expr],
-        _ => return vec![],
-    };
-
-    match bin_ex.op {
-        BinOp::And(_) | BinOp::Or(_) => {
-            let mut left = split_constraints(&bin_ex.left);
-            let right = split_constraints(&bin_ex.right);
-            left.extend(right);
-            left
-        }
-        _ => {
-            vec![expr]
-        }
-    }
-}
+use syn::{BinOp, Expr, ExprArray, ExprLit, Lit, UnOp};
 
 fn get_ints_to_declare(consts: &IndexSet<Ident>, expr: &Expr) -> IndexSet<Expr> {
     match expr {
@@ -152,15 +131,30 @@ fn declare_constraint(name: &str, expr: &Expr) -> TokenStream {
     }
 }
 
-fn split_stream_into_consts_and_constraints(stream: &TokenStream) -> Result<(ExprArray, Expr)> {
+fn extract_consts_constraints_and_goal(
+    stream: &TokenStream,
+) -> Result<(ExprArray, ExprArray, String)> {
     let stream = stream.to_string();
-    let (consts, constraints) = stream.split_once(';').context("splitting proc macro failed")?;
-    let consts = consts.parse::<TokenStream>().map_err(|_| anyhow::anyhow!("invalid consts"))?;
-    let consts = syn::parse2(consts)?;
-    let constraints =
-        constraints.parse::<TokenStream>().map_err(|_| anyhow::anyhow!("invalid constraints"))?;
-    let constraints = syn::parse2(constraints)?;
-    Ok((consts, constraints))
+    let (consts, rest) = stream.split_once(';').context("splitting proc macro failed")?;
+    let consts = {
+        let consts =
+            consts.parse::<TokenStream>().map_err(|_| anyhow::anyhow!("invalid consts"))?;
+        syn::parse2(consts)?
+    };
+    let (constraints, goal) = rest.split_once(';').context("splitting proc macro failed")?;
+    let constraints = {
+        let constraints = constraints
+            .parse::<TokenStream>()
+            .map_err(|_| anyhow::anyhow!("invalid constraints"))?;
+        syn::parse2(constraints)?
+    };
+    let Lit::Str(goal) = ({
+        let goal = goal.parse::<TokenStream>().map_err(|_| anyhow::anyhow!("invalid goal"))?;
+        syn::parse2::<ExprLit>(goal)?.lit
+    }) else {
+        anyhow::bail!("invalid goal")
+    };
+    Ok((consts, constraints, goal.value()))
 }
 
 fn path_expr_to_ident(expr: &Expr) -> Result<Ident> {
@@ -200,23 +194,36 @@ fn create_const_declarations(consts: &ExprArray) -> Result<TokenStream> {
     })
 }
 
-fn create_conditions(consts_set: &IndexSet<Ident>, constraints: &Expr) -> TokenStream {
-    let ints = get_ints_to_declare(consts_set, constraints);
+fn create_conditions(
+    consts_set: &IndexSet<Ident>,
+    constraints: &ExprArray,
+    goal: &str,
+) -> TokenStream {
+    let mut ints = IndexSet::new();
+    for c in &constraints.elems {
+        let i = get_ints_to_declare(consts_set, c);
+        ints.extend(i);
+    }
     let int_declarations = ints.iter().map(declare_int);
-    let constraints = split_constraints(constraints);
 
     let mut condition_idents = vec![];
     let mut conditions = vec![];
 
-    for (i, c) in constraints.iter().enumerate() {
+    for (i, c) in constraints.elems.iter().enumerate() {
         let name = format!("__condition_{i}");
         let ident = Ident::new(&name, Span::call_site());
         condition_idents.push(ident);
         conditions.push(declare_constraint(&name, c));
     }
 
-    let goal = quote! {
-        let __goal = z3::ast::Bool::and(&__ctx_z3, &[#(&#condition_idents),*]);
+    let goal = match goal {
+        "and" => quote! {
+            let __goal = z3::ast::Bool::and(&__ctx_z3, &[#(&#condition_idents),*]);
+        },
+        "or" => quote! {
+            let __goal = z3::ast::Bool::or(&__ctx_z3, &[#(&#condition_idents),*]);
+        },
+        _ => panic!("invalid goal, must be and or or"),
     };
 
     quote! {
@@ -227,10 +234,10 @@ fn create_conditions(consts_set: &IndexSet<Ident>, constraints: &Expr) -> TokenS
 }
 
 pub fn z3_verify(expr: &TokenStream) -> Result<TokenStream> {
-    let (consts, constraints) = split_stream_into_consts_and_constraints(expr)?;
+    let (consts, constraints, goal) = extract_consts_constraints_and_goal(expr)?;
     let consts_set = const_array_to_set(&consts)?;
     let const_declarations = create_const_declarations(&consts)?;
-    let conditions = create_conditions(&consts_set, &constraints);
+    let conditions = create_conditions(&consts_set, &constraints, &goal);
     let res = quote! {
         let __cfg = z3::Config::new();
         let __ctx_z3 = z3::Context::new(&__cfg);
@@ -245,57 +252,10 @@ pub fn z3_verify(expr: &TokenStream) -> Result<TokenStream> {
 #[cfg(test)]
 mod tests {
     use proc_macro2::{Ident, Span};
-    use quote::{quote, ToTokens};
-    use syn::Expr;
+    use quote::quote;
+    use syn::{Expr, ExprArray};
 
     use crate::z3_verify;
-
-    #[test]
-    fn test_split_conditions_1() {
-        let expr = quote! { a == b * c + d && a + b && (a + c || b + d) && !a };
-        let expr = syn::parse2(expr).unwrap();
-        let flattened = super::split_constraints(&expr);
-        assert_eq!(flattened.len(), 4);
-        assert_eq!(flattened[0].to_token_stream().to_string(), "a == b * c + d");
-        assert_eq!(flattened[1].to_token_stream().to_string(), "a + b");
-        assert_eq!(flattened[2].to_token_stream().to_string(), "(a + c || b + d)");
-        assert_eq!(flattened[3].to_token_stream().to_string(), "! a");
-    }
-
-    #[test]
-    fn test_split_conditions_2() {
-        let expr = quote! { a == b };
-        let expr = syn::parse2(expr).unwrap();
-        let flattened = super::split_constraints(&expr);
-        assert_eq!(flattened.len(), 1);
-        assert_eq!(flattened[0].to_token_stream().to_string(), "a == b");
-    }
-
-    #[test]
-    fn test_split_conditions_3() {
-        let expr = quote! { return };
-        let expr = syn::parse2(expr).unwrap();
-        let flattened = super::split_constraints(&expr);
-        assert_eq!(flattened.len(), 0);
-    }
-
-    #[test]
-    fn test_split_conditions_4() {
-        let expr = quote! { (((a + b))) };
-        let expr = syn::parse2(expr).unwrap();
-        let flattened = super::split_constraints(&expr);
-        assert_eq!(flattened.len(), 1);
-        assert_eq!(flattened[0].to_token_stream().to_string(), "(((a + b)))");
-    }
-
-    #[test]
-    fn test_split_conditions_5() {
-        let expr = quote! { a > 1 };
-        let expr = syn::parse2(expr).unwrap();
-        let flattened = super::split_constraints(&expr);
-        assert_eq!(flattened.len(), 1);
-        assert_eq!(flattened[0].to_token_stream().to_string(), "a > 1");
-    }
 
     #[test]
     fn test_create_declarations() {
@@ -347,19 +307,19 @@ mod tests {
 
     #[test]
     fn test_declare_constraint_1() {
-        let expr = quote! { a == b };
-        let expr = syn::parse2(expr).unwrap();
-        let constraints = super::split_constraints(&expr);
-        let condition = super::declare_constraint("one", constraints[0]);
+        let expr = quote! { [a == b] };
+        let expr = syn::parse2::<ExprArray>(expr).unwrap();
+        let constraints = expr.elems;
+        let condition = super::declare_constraint("one", &constraints[0]);
         assert_eq!(condition.to_string(), "let one = (__a) . _eq (& __b) ;");
     }
 
     #[test]
     fn test_declare_constraint_2() {
-        let expr = quote! { a + b + c == 3 };
-        let expr = syn::parse2(expr).unwrap();
-        let constraints = super::split_constraints(&expr);
-        let condition = super::declare_constraint("one", constraints[0]);
+        let expr = quote! { [a + b + c == 3] };
+        let expr = syn::parse2::<ExprArray>(expr).unwrap();
+        let constraints = expr.elems;
+        let condition = super::declare_constraint("one", &constraints[0]);
         assert_eq!(
             condition.to_string(),
             "let one = (((__a) . add (& __b)) . add (& __c)) . _eq (& __3) ;"
@@ -368,10 +328,10 @@ mod tests {
 
     #[test]
     fn test_declare_constraint_3() {
-        let expr = quote! { a + b + c == 3 + d };
-        let expr = syn::parse2(expr).unwrap();
-        let constraints = super::split_constraints(&expr);
-        let condition = super::declare_constraint("one", constraints[0]);
+        let expr = quote! { [a + b + c == 3 + d] };
+        let expr = syn::parse2::<ExprArray>(expr).unwrap();
+        let constraints = expr.elems;
+        let condition = super::declare_constraint("one", &constraints[0]);
         assert_eq!(
             condition.to_string(),
             "let one = (((__a) . add (& __b)) . add (& __c)) . _eq (& (__3) . add (& __d)) ;"
@@ -380,10 +340,10 @@ mod tests {
 
     #[test]
     fn test_declare_constraint_4() {
-        let expr = quote! { a + b + c > 3 + d };
-        let expr = syn::parse2(expr).unwrap();
-        let constraints = super::split_constraints(&expr);
-        let condition = super::declare_constraint("one", constraints[0]);
+        let expr = quote! { [a + b + c > 3 + d] };
+        let expr = syn::parse2::<ExprArray>(expr).unwrap();
+        let constraints = expr.elems;
+        let condition = super::declare_constraint("one", &constraints[0]);
         assert_eq!(
             condition.to_string(),
             "let one = (((__a) . add (& __b)) . add (& __c)) . gt (& (__3) . add (& __d)) ;"
@@ -392,10 +352,10 @@ mod tests {
 
     #[test]
     fn test_declare_constraint_5() {
-        let expr = quote! { (a - b) + c > 4 * (d / 6) };
-        let expr = syn::parse2(expr).unwrap();
-        let constraints = super::split_constraints(&expr);
-        let condition = super::declare_constraint("one", constraints[0]);
+        let expr = quote! { [(a - b) + c > 4 * (d / 6)] };
+        let expr = syn::parse2::<ExprArray>(expr).unwrap();
+        let constraints = expr.elems;
+        let condition = super::declare_constraint("one", &constraints[0]);
         println!("{}", condition.to_string());
         assert_eq!(
             condition.to_string(),
@@ -405,10 +365,10 @@ mod tests {
 
     #[test]
     fn test_declare_constraint_6() {
-        let expr = quote! { ((a - b) + c > 4 * (d / 6)) };
-        let expr = syn::parse2(expr).unwrap();
-        let constraints = super::split_constraints(&expr);
-        let condition = super::declare_constraint("one", constraints[0]);
+        let expr = quote! { [((a - b) + c > 4 * (d / 6))] };
+        let expr = syn::parse2::<ExprArray>(expr).unwrap();
+        let constraints = expr.elems;
+        let condition = super::declare_constraint("one", &constraints[0]);
         println!("{}", condition.to_string());
         assert_eq!(
             condition.to_string(),
@@ -418,36 +378,28 @@ mod tests {
 
     #[test]
     fn test_declare_constraint_7() {
-        let expr = quote! { a };
-        let expr = syn::parse2(expr).unwrap();
-        let constraints = super::split_constraints(&expr);
-        assert_eq!(constraints.len(), 0);
-    }
-
-    #[test]
-    fn test_declare_constraint_8() {
-        let expr = quote! { !a };
-        let expr = syn::parse2(expr).unwrap();
-        let constraints = super::split_constraints(&expr);
-        let condition = super::declare_constraint("one", constraints[0]);
+        let expr = quote! { [!a] };
+        let expr = syn::parse2::<ExprArray>(expr).unwrap();
+        let constraints = expr.elems;
+        let condition = super::declare_constraint("one", &constraints[0]);
         assert_eq!(condition.to_string(), "let one = (__a) . not () ;");
     }
 
     #[test]
-    fn test_declare_constraint_9() {
-        let expr = quote! { !!a };
-        let expr = syn::parse2(expr).unwrap();
-        let constraints = super::split_constraints(&expr);
-        let condition = super::declare_constraint("one", constraints[0]);
+    fn test_declare_constraint_8() {
+        let expr = quote! { [!!a] };
+        let expr = syn::parse2::<ExprArray>(expr).unwrap();
+        let constraints = expr.elems;
+        let condition = super::declare_constraint("one", &constraints[0]);
         assert_eq!(condition.to_string(), "let one = ((__a) . not ()) . not () ;");
     }
 
     #[test]
-    fn test_declare_constraint_10() {
-        let expr = quote! { !(a + b > 0) };
-        let expr = syn::parse2(expr).unwrap();
-        let constraints = super::split_constraints(&expr);
-        let condition = super::declare_constraint("one", constraints[0]);
+    fn test_declare_constraint_9() {
+        let expr = quote! { [!(a + b > 0)] };
+        let expr = syn::parse2::<ExprArray>(expr).unwrap();
+        let constraints = expr.elems;
+        let condition = super::declare_constraint("one", &constraints[0]);
         assert_eq!(
             condition.to_string(),
             "let one = (((__a) . add (& __b)) . gt (& __0)) . not () ;"
@@ -455,59 +407,63 @@ mod tests {
     }
 
     #[test]
-    fn test_declare_constraint_11() {
-        let expr = quote! { !!!!((a - b) + c > 4 * (d / 6)) };
-        let expr = syn::parse2(expr).unwrap();
-        let constraints = super::split_constraints(&expr);
-        let condition = super::declare_constraint("one", constraints[0]);
+    fn test_declare_constraint_10() {
+        let expr = quote! { [!!!!((a - b) + c > 4 * (d / 6))] };
+        let expr = syn::parse2::<ExprArray>(expr).unwrap();
+        let constraints = expr.elems;
+        let condition = super::declare_constraint("one", &constraints[0]);
         assert_eq!(condition.to_string(), "let one = (((((((__a) . sub (& __b)) . add (& __c)) . gt (& (__4) . mul (& (__d) . div (& __6)))) . not ()) . not ()) . not ()) . not () ;");
     }
 
     #[test]
     fn test_create_conditions_1() {
-        let expr = quote! { a == b };
+        let expr = quote! { [a == b] };
         let expr = syn::parse2(expr).unwrap();
         let a_id = Ident::new("a", Span::call_site());
         let b_id = Ident::new("b", Span::call_site());
         let set = [a_id, b_id].into();
-        let conditions = super::create_conditions(&set, &expr);
+        let conditions = super::create_conditions(&set, &expr, "and");
         let expected = "let __condition_0 = (__a) . _eq (& __b) ; let __goal = z3 :: ast :: Bool :: and (& __ctx_z3 , & [& __condition_0]) ;";
         assert_eq!(conditions.to_string(), expected);
     }
 
     #[test]
     fn test_create_conditions_2() {
-        let expr = quote! { a == b && a > 0 && b < 3 };
+        let expr = quote! { [a == b, a > 0, b < 3] };
         let expr = syn::parse2(expr).unwrap();
         let a_id = Ident::new("a", Span::call_site());
         let b_id = Ident::new("b", Span::call_site());
         let set = [a_id, b_id].into();
-        let conditions = super::create_conditions(&set, &expr);
+        let conditions = super::create_conditions(&set, &expr, "and");
         let expected = "let __0 = z3 :: ast :: Int :: from_i64 (& __ctx_z3 , 0) ; let __3 = z3 :: ast :: Int :: from_i64 (& __ctx_z3 , 3) ; let __condition_0 = (__a) . _eq (& __b) ; let __condition_1 = (__a) . gt (& __0) ; let __condition_2 = (__b) . lt (& __3) ; let __goal = z3 :: ast :: Bool :: and (& __ctx_z3 , & [& __condition_0 , & __condition_1 , & __condition_2]) ;";
         assert_eq!(conditions.to_string(), expected);
     }
 
     #[test]
     fn test_create_conditions_3() {
-        let expr = quote! { a > test_int };
+        let expr = quote! { [a > test_int] };
         let expr = syn::parse2(expr).unwrap();
         let a_id = Ident::new("a", Span::call_site());
         let set = [a_id].into();
-        let conditions = super::create_conditions(&set, &expr);
+        let conditions = super::create_conditions(&set, &expr, "and");
         let expected = "let __test_int = z3 :: ast :: Int :: from_i64 (& __ctx_z3 , test_int) ; let __condition_0 = (__a) . gt (& __test_int) ; let __goal = z3 :: ast :: Bool :: and (& __ctx_z3 , & [& __condition_0]) ;";
         assert_eq!(conditions.to_string(), expected);
     }
 
     #[test]
     fn test_z3_div_mod() {
-        let expr = quote! { [a, b, div, rem]; a == b * div + rem };
-        let r = z3_verify(&expr).unwrap();
-        println!("{}", r);
+        // let expr = quote! { [a, b]; a < 0 || a >= max_range || b < 0 || b >= max_range ||  a < b };
+        // let r = z3_verify(&expr).unwrap();
+        // println!("{}", r);
+        // let expr = quote! { [a < 0, a >= max_range, b < 0, b >= max_range, a < b] };
+        // let expr = syn::parse2(expr).unwrap();
+        // let split = super::split_constraints_new(&expr);
+        // println!("{:?}", expr);
     }
 
     #[test]
     fn test_z3_verify_1() {
-        let expr = quote! { [a]; a >= test_int };
+        let expr = quote! { [a]; [a >= test_int]; "or" };
         let r = z3_verify(&expr).unwrap();
         println!("{}", r);
     }
