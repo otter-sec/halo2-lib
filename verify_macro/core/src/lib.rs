@@ -78,10 +78,9 @@ fn bin_op_to_z3(op: BinOp) -> TokenStream {
         BinOp::Mul(_) => "mul",
         BinOp::Div(_) => "div",
         BinOp::Rem(_) => "rem",
-        BinOp::Eq(_) => "eq",
+        BinOp::Eq(_) => "_eq",
         BinOp::Lt(_) => "lt",
         BinOp::Le(_) => "le",
-        BinOp::Ne(_) => "ne",
         BinOp::Ge(_) => "ge",
         BinOp::Gt(_) => "gt",
         _ => panic!("invalid"),
@@ -352,7 +351,7 @@ mod tests {
         let expr = syn::parse2(expr).unwrap();
         let constraints = super::split_constraints(&expr);
         let condition = super::declare_constraint("one", constraints[0]);
-        assert_eq!(condition.to_string(), "let one = (__a) . eq (& __b) ;");
+        assert_eq!(condition.to_string(), "let one = (__a) . _eq (& __b) ;");
     }
 
     #[test]
@@ -363,7 +362,7 @@ mod tests {
         let condition = super::declare_constraint("one", constraints[0]);
         assert_eq!(
             condition.to_string(),
-            "let one = (((__a) . add (& __b)) . add (& __c)) . eq (& __3) ;"
+            "let one = (((__a) . add (& __b)) . add (& __c)) . _eq (& __3) ;"
         )
     }
 
@@ -375,7 +374,7 @@ mod tests {
         let condition = super::declare_constraint("one", constraints[0]);
         assert_eq!(
             condition.to_string(),
-            "let one = (((__a) . add (& __b)) . add (& __c)) . eq (& (__3) . add (& __d)) ;"
+            "let one = (((__a) . add (& __b)) . add (& __c)) . _eq (& (__3) . add (& __d)) ;"
         )
     }
 
@@ -472,7 +471,7 @@ mod tests {
         let b_id = Ident::new("b", Span::call_site());
         let set = [a_id, b_id].into();
         let conditions = super::create_conditions(&set, &expr);
-        let expected = "let __condition_0 = (__a) . eq (& __b) ; let __goal = z3 :: ast :: Bool :: and (& __ctx_z3 , & [& __condition_0]) ;";
+        let expected = "let __condition_0 = (__a) . _eq (& __b) ; let __goal = z3 :: ast :: Bool :: and (& __ctx_z3 , & [& __condition_0]) ;";
         assert_eq!(conditions.to_string(), expected);
     }
 
@@ -484,7 +483,7 @@ mod tests {
         let b_id = Ident::new("b", Span::call_site());
         let set = [a_id, b_id].into();
         let conditions = super::create_conditions(&set, &expr);
-        let expected = "let __0 = z3 :: ast :: Int :: from_i64 (& __ctx_z3 , 0) ; let __3 = z3 :: ast :: Int :: from_i64 (& __ctx_z3 , 3) ; let __condition_0 = (__a) . eq (& __b) ; let __condition_1 = (__a) . gt (& __0) ; let __condition_2 = (__b) . lt (& __3) ; let __goal = z3 :: ast :: Bool :: and (& __ctx_z3 , & [& __condition_0 , & __condition_1 , & __condition_2]) ;";
+        let expected = "let __0 = z3 :: ast :: Int :: from_i64 (& __ctx_z3 , 0) ; let __3 = z3 :: ast :: Int :: from_i64 (& __ctx_z3 , 3) ; let __condition_0 = (__a) . _eq (& __b) ; let __condition_1 = (__a) . gt (& __0) ; let __condition_2 = (__b) . lt (& __3) ; let __goal = z3 :: ast :: Bool :: and (& __ctx_z3 , & [& __condition_0 , & __condition_1 , & __condition_2]) ;";
         assert_eq!(conditions.to_string(), expected);
     }
 
@@ -500,8 +499,15 @@ mod tests {
     }
 
     #[test]
+    fn test_z3_div_mod() {
+        let expr = quote! { [a, b, div, rem]; a == b * div + rem };
+        let r = z3_verify(&expr).unwrap();
+        println!("{}", r);
+    }
+
+    #[test]
     fn test_z3_verify_1() {
-        let expr = quote! { [a]; a >= 0 };
+        let expr = quote! { [a]; a >= test_int };
         let r = z3_verify(&expr).unwrap();
         println!("{}", r);
     }
