@@ -435,7 +435,7 @@ mod tests {
         let b_id = Ident::new("b", Span::call_site());
         let set = [a_id, b_id].into();
         let conditions = super::create_conditions(&set, &expr, "and");
-        let expected = "let __0 = z3 :: ast :: Int :: from_big_int (& __ctx_z3 , 0) ; let __3 = z3 :: ast :: Int :: from_big_int (& __ctx_z3 , 3) ; let __condition_0 = (__a) . _eq (& __b) ; let __condition_1 = (__a) . gt (& __0) ; let __condition_2 = (__b) . lt (& __3) ; let __goal = z3 :: ast :: Bool :: and (& __ctx_z3 , & [& __condition_0 , & __condition_1 , & __condition_2]) ;";
+        let expected = "let __0 = z3 :: ast :: Int :: from_big_int (& __ctx_z3 , & 0 . into ()) ; let __3 = z3 :: ast :: Int :: from_big_int (& __ctx_z3 , & 3 . into ()) ; let __condition_0 = (__a) . _eq (& __b) ; let __condition_1 = (__a) . gt (& __0) ; let __condition_2 = (__b) . lt (& __3) ; let __goal = z3 :: ast :: Bool :: and (& __ctx_z3 , & [& __condition_0 , & __condition_1 , & __condition_2]) ;";
         assert_eq!(conditions.to_string(), expected);
     }
 
@@ -446,7 +446,7 @@ mod tests {
         let a_id = Ident::new("a", Span::call_site());
         let set = [a_id].into();
         let conditions = super::create_conditions(&set, &expr, "and");
-        let expected = "let __test_int = z3 :: ast :: Int :: from_big_int (& __ctx_z3 , test_int) ; let __condition_0 = (__a) . gt (& __test_int) ; let __goal = z3 :: ast :: Bool :: and (& __ctx_z3 , & [& __condition_0]) ;";
+        let expected = "let __test_int = z3 :: ast :: Int :: from_big_int (& __ctx_z3 , & test_int . into ()) ; let __condition_0 = (__a) . gt (& __test_int) ; let __goal = z3 :: ast :: Bool :: and (& __ctx_z3 , & [& __condition_0]) ;";
         assert_eq!(conditions.to_string(), expected);
     }
 
