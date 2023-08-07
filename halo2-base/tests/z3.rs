@@ -1,5 +1,6 @@
 extern crate halo2_base;
 extern crate num_bigint;
+extern crate num_traits;
 
 use halo2_base::gates::{
     builder::{GateThreadBuilder, RangeCircuitBuilder},
@@ -10,6 +11,8 @@ use halo2_base::utils::{fe_to_biguint, z3_formally_verify, BigPrimeField};
 use halo2_base::Context;
 use z3::ast::Ast;
 use verify_macro::z3_verify;
+use num_traits::ToPrimitive;
+use halo2_base::gates::flex_gate::GateInstructions;
 // use z3::{ast::{Bool, Int}, Config, Solver};
 
 // Example of how to formally verify a circuit
@@ -74,15 +77,68 @@ fn test_z3_div_mod() {
 
     let ctx = builder.main(0);
 
+    let [a]: [_; 1] = ctx.assign_witnesses([inputs[0]]).try_into().unwrap();
+    let chip = RangeChip::default(3);
+    let lookup_bits = 3;
+    std::env::set_var("LOOKUP_BITS", lookup_bits.to_string());
+    let (div, rem) = chip.div_mod(ctx, a, fe_to_biguint(&inputs[1]), 8);
+    println!("div : {:?}", div.value());
+    println!("rem : {:?}", rem.value());
+    let b_cell = ctx.get(2);
+    z3_verify!([a, b_cell, div, rem]; [a == b_cell * div + rem]; "and");
+}
+
+#[test]
+fn test_z3_div_mod_var() {
+    let k = 11;
+    let inputs = [100, 10].map(Fr::from);
+
+    let mut builder = GateThreadBuilder::mock();
+
+    let ctx = builder.main(0);
+
     let [a, b]: [_; 2] = ctx.assign_witnesses(inputs).try_into().unwrap();
     let chip = RangeChip::default(3);
     let lookup_bits = 3;
     std::env::set_var("LOOKUP_BITS", lookup_bits.to_string());
-    let (div, rem) = chip.div_mod(ctx, a, fe_to_biguint(b.value()), 8);
+    let (div, rem) = chip.div_mod_var(ctx, a, b, 8, 8);
     println!("div : {:?}", div.value());
     println!("rem : {:?}", rem.value());
+    z3_verify!([a, b, div, rem]; [a == b* div + rem]; "and");
+}
 
-    z3_verify!([a, b, div, rem]; [a == b * div + rem]; "and");
+#[test]
+fn test_z3_get_last_bit() {
+    let k = 11;
+    let inputs = [100, 10].map(Fr::from);
+
+    let mut builder = GateThreadBuilder::mock();
+
+    let ctx = builder.main(0);
+
+    let [a, b]: [_; 2] = ctx.assign_witnesses(inputs).try_into().unwrap();
+    let chip = RangeChip::default(3);
+    let lookup_bits = 3;
+    std::env::set_var("LOOKUP_BITS", lookup_bits.to_string());
+    let (bit) = chip.get_last_bit(ctx, a,  8);
+    z3_verify!([bit]; [bit == 0, bit == 1]  ; "or");
+}
+
+#[test]
+fn test_z3_assert_bit() {
+    let k = 11;
+    let inputs = [100, 10].map(Fr::from);
+
+    let mut builder = GateThreadBuilder::mock();
+
+    let ctx = builder.main(0);
+
+    let [a, b]: [_; 2] = ctx.assign_witnesses(inputs).try_into().unwrap();
+    let chip = RangeChip::default(3);
+    let lookup_bits = 3;
+    std::env::set_var("LOOKUP_BITS", lookup_bits.to_string());
+    chip.gate().assert_bit(ctx,a);
+    z3_verify!([a]; [a == 0, a == 1]  ; "or");
 }
 
 #[test]
@@ -102,6 +158,25 @@ fn test_z3_check_less_than() {
     chip.check_less_than(ctx, a, b, range_bits);
     let max_range = 2 << range_bits;
     z3_verify!([a, b]; [a < 0, a >= max_range, b < 0, b >= max_range, a < b]; "or");
+}
+
+#[test]
+fn test_z3_check_less_than_safe() {
+    let k = 11;
+    let inputs = [100, 10].map(Fr::from);
+
+    let mut builder = GateThreadBuilder::mock();
+
+    let ctx = builder.main(0);
+
+    let [a]: [_; 1] = ctx.assign_witnesses([inputs[0]]).try_into().unwrap();
+    let chip = RangeChip::default(3);
+    let lookup_bits = 3;
+    std::env::set_var("LOOKUP_BITS", lookup_bits.to_string());
+    let b = fe_to_biguint(&inputs[1]).to_u64().unwrap();
+    let b_i64 = fe_to_biguint(&inputs[1]).to_i64().unwrap();
+    chip.check_less_than_safe(ctx, a, b);
+    z3_verify!([a]; [a < b_i64]; "and");
 }
 
 #[test]
